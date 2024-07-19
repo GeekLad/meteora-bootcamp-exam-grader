@@ -1,0 +1,17 @@
+{
+  "name": "meteora-bootcamp-exam-grader",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@meteora-ag/dlmm": "^1.0.48",
+    "@solana/web3.js": "^1.95.0",
+    "bs58": "^6.0.0",
+    "p-throttle": "^6.1.0"
+  }
+}
