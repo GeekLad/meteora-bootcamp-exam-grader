@@ -179,3 +179,9 @@ dist
 
 # Data files
 *.csv
+
+# Backup files
+*.bak
+
+# Other crap
+*.Identifier

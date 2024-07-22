@@ -1,3 +1,4 @@
+import csvtojson from "csvtojson";
 import { Connection, type ParsedTransactionWithMeta } from "@solana/web3.js";
 import bs58 from "bs58";
 import { parseMeteoraTransactions } from "./ParseMeteoraTransactions";
@@ -9,13 +10,31 @@ import { objArrayToCsvString } from "./util";
 import type { MeteoraPosition } from "./MeteoraPosition";
 import { getParsedTransactions } from "./ConnectionThrottle";
 
-const SIGNATURE_COLUMN_NUMBER = Number(
-  process.env.SIGNATURE_COLUMN_NUMBER ?? 6,
-);
-const START_DATE = new Date("07/09/2024");
+const errors: string[] = [];
+const SIGNATURE_COLUMN_LABEL = process.env.SIGNATURE_COLUMN_LABEL;
+if (!SIGNATURE_COLUMN_LABEL) {
+  errors.push("SIGNATURE_COLUMN_LABEL environment variable not found");
+}
+const RPC_URL = process.env.RPC_URL;
+if (!RPC_URL) {
+  errors.push("RPC_URL environment variable not found");
+}
+const DATA_FILE = process.env.DATA_FILE;
+if (!DATA_FILE) {
+  errors.push("DATA_FILE environment variable not found");
+}
+const START_DATE_STR = process.env.START_DATE;
+if (!START_DATE_STR) {
+  errors.push("START_DATE environment variable not found");
+}
+if (errors.length > 0) {
+  console.error(errors.join("\n"));
+  throw new Error(errors.join("\n"));
+}
+const START_DATE = new Date(START_DATE_STR!);
 
 interface LpArmyStudentData {
-  fullSubmission: string;
+  fullSubmission: { [key: string]: string };
   originalSignature: string;
   cleansedSignature?: string;
   position?: string;
@@ -26,9 +45,11 @@ interface LpArmyStudentData {
 const output: LpArmyStudentData[] = [];
 const file = Bun.file(process.env.DATA_FILE!);
 const text = await file.text();
-const fullOriginalData = text.split("\n");
+const fullOriginalData = (await csvtojson().fromString(text)) as {
+  [key: string]: string;
+}[];
 const originalData = fullOriginalData.map(
-  (line) => line.split(",")[SIGNATURE_COLUMN_NUMBER],
+  (data) => data[SIGNATURE_COLUMN_LABEL!],
 );
 
 function isValidSignature(signature: string) {
@@ -104,11 +125,11 @@ meteoraTransactions.forEach((transaction) => {
   }
 });
 
-console.log("Loaded position addresses, loading all position transactions");
+console.log("Getting all P&Ls...");
 
 output
   .filter((outputData) => outputData.position)
-  .forEach((outputData) => {
+  .forEach(async (outputData) => {
     new MeteoraPositionStream(connection, outputData.position!).on(
       "data",
       (positionStreamData) => {
@@ -125,11 +146,6 @@ output
                 ).length;
                 const csvString = objArrayToCsvString(
                   output.map((data) => {
-                    const originalColumnDataArray =
-                      data.fullSubmission.split(",");
-                    const obj = Object.fromEntries(
-                      originalColumnDataArray.entries(),
-                    );
                     if (data.meteoraPosition) {
                       const profitPercent =
                         -data.meteoraPosition.usdProfitLossValue! /
@@ -142,7 +158,7 @@ output
                       const validDate = openDateObj > START_DATE;
                       const validSubmission = validProfitPercent && validDate;
                       return {
-                        ...obj,
+                        ...data.fullSubmission,
                         profitPercent,
                         openDate,
                         validProfitPercent,
@@ -152,7 +168,7 @@ output
                       };
                     }
                     return {
-                      ...obj,
+                      ...data.fullSubmission,
                       profitPercent: null,
                       openDate: null,
                       validProfitPercent: null,

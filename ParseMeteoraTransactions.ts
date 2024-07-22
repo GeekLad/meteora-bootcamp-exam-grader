@@ -18,6 +18,7 @@ import { getPriceOfBinByBinId, IDL as meteoraIdl } from "@meteora-ag/dlmm";
 import { type MeteoraDlmmPair } from "./MeteoraDlmmApi";
 import { type JupiterTokenListToken } from "./JupiterTokenList";
 import { unique } from "./util";
+import { getParsedAccountInfo } from "./ConnectionThrottle";
 
 const METEORA_PROGRAM_ID = "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo";
 const HAWKSIGHT_PROGRAM_ID = "FqGg2Y1FNxMiGd51Q6UETixQWkF5fB92MysbYogRJb3P";
@@ -435,7 +436,8 @@ async function getSyntheticToken(
   mint: string,
   tokenMap: Map<string, JupiterTokenListToken>,
 ) {
-  const mintAccountInfo = await connection.getParsedAccountInfo(
+  const mintAccountInfo = await getParsedAccountInfo(
+    connection,
     new PublicKey(mint),
   );
   const mintData = mintAccountInfo.value!.data as ParsedAccountData;

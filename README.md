@@ -5,9 +5,9 @@ It is heavily based on his [Meteora DLMM Profit Analysis Tool](https://github.co
 
 ## Environment Variables
 
-`RPC_URL`: URL of the RPC to use for parsing transactions
-`DATA_FILE`: The filename of the CSV that contains the submissions
-`SIGNATURE_COLUMN_NUMBER`: The column in the file that contains the transaction signature submitted
+- `RPC_URL`: URL of the RPC to use for parsing transactions
+- `DATA_FILE`: The filename of the CSV that contains the submissions
+- `SIGNATURE_COLUMN_NUMBER`: The column in the file that contains the transaction signature submitted
 
 ## To Launch
 
