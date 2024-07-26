@@ -1,3 +1,4 @@
+import csvtojson from "csvtojson";
 import { Connection, type ParsedTransactionWithMeta } from "@solana/web3.js";
 import bs58 from "bs58";
 import { parseMeteoraTransactions } from "./ParseMeteoraTransactions";
@@ -9,13 +10,44 @@ import { objArrayToCsvString } from "./util";
 import type { MeteoraPosition } from "./MeteoraPosition";
 import { getParsedTransactions } from "./ConnectionThrottle";
 
-const SIGNATURE_COLUMN_NUMBER = Number(
-  process.env.SIGNATURE_COLUMN_NUMBER ?? 6,
-);
-const START_DATE = new Date("07/09/2024");
+const errors: string[] = [];
+const requiredEnvVariables = [
+  "SIGNATURE_COLUMN_LABEL",
+  "RPC_URL",
+  "DATA_FILE",
+  "START_DATE",
+  "MIN_USD_DEPOSIT_VALUE",
+  "MIN_HOURS_OPEN",
+  "START_DATE",
+  "END_DATE",
+];
+
+function environmentCheck(variable: string) {
+  if (!process.env[variable]) {
+    errors.push(`${variable} environment variable not found`);
+  }
+}
+
+requiredEnvVariables.forEach((variable) => environmentCheck(variable));
+
+if (errors.length > 0) {
+  console.error(errors.join("\n"));
+  throw new Error(errors.join("\n"));
+}
+
+const SIGNATURE_COLUMN_LABEL = process.env.SIGNATURE_COLUMN_LABEL!;
+const RPC_URL = process.env.RPC_URL!;
+const DATA_FILE = process.env.DATA_FILE!;
+const MIN_USD_DEPOSIT_VALUE = Number(process.env.MIN_USD_DEPOSIT_VALUE!);
+const MIN_PROFIT_PERCENT = process.env.MIN_PROFIT_PERCENT
+  ? Number(process.env.MIN_PROFIT_PERCENT)
+  : 0;
+const MIN_HOURS_OPEN = Number(process.env.MIN_HOURS_OPEN!);
+const START_DATE = new Date(process.env.START_DATE!);
+const END_DATE = new Date(process.env.END_DATE!);
 
 interface LpArmyStudentData {
-  fullSubmission: string;
+  fullSubmission: { [key: string]: string };
   originalSignature: string;
   cleansedSignature?: string;
   position?: string;
@@ -24,11 +56,21 @@ interface LpArmyStudentData {
 
 // Load from CSV
 const output: LpArmyStudentData[] = [];
-const file = Bun.file(process.env.DATA_FILE!);
+const file = Bun.file(DATA_FILE);
 const text = await file.text();
-const fullOriginalData = text.split("\n");
+const fullOriginalData = (await csvtojson().fromString(text)) as {
+  [key: string]: string;
+}[];
+
+// Make sure the signature column label exists
+if (!fullOriginalData[0][SIGNATURE_COLUMN_LABEL]) {
+  throw new Error(
+    `Column labeled "${SIGNATURE_COLUMN_LABEL!}" was not found in input data`,
+  );
+}
+
 const originalData = fullOriginalData.map(
-  (line) => line.split(",")[SIGNATURE_COLUMN_NUMBER],
+  (data) => data[SIGNATURE_COLUMN_LABEL],
 );
 
 function isValidSignature(signature: string) {
@@ -68,7 +110,7 @@ originalData.forEach((original, index) => {
 const submittedSignatures = output
   .filter((outputData) => outputData.cleansedSignature != null)
   .map((outputData) => outputData.cleansedSignature) as string[];
-const connection = new Connection(process.env.RPC_URL!);
+const connection = new Connection(RPC_URL);
 
 // Get parsed transactions so we can get the position addresses
 const parsedTransactions = (await getParsedTransactions(
@@ -104,11 +146,11 @@ meteoraTransactions.forEach((transaction) => {
   }
 });
 
-console.log("Loaded position addresses, loading all position transactions");
+console.log("Getting all P&Ls...");
 
 output
   .filter((outputData) => outputData.position)
-  .forEach((outputData) => {
+  .forEach(async (outputData) => {
     new MeteoraPositionStream(connection, outputData.position!).on(
       "data",
       (positionStreamData) => {
@@ -125,38 +167,72 @@ output
                 ).length;
                 const csvString = objArrayToCsvString(
                   output.map((data) => {
-                    const originalColumnDataArray =
-                      data.fullSubmission.split(",");
-                    const obj = Object.fromEntries(
-                      originalColumnDataArray.entries(),
-                    );
                     if (data.meteoraPosition) {
-                      const profitPercent =
-                        -data.meteoraPosition.usdProfitLossValue! /
-                        data.meteoraPosition.usdDepositsValue!;
+                      const usdProfitPercent =
+                        data.meteoraPosition.usdDepositsValue !== null &&
+                        data.meteoraPosition.usdProfitLossValue !== null
+                          ? -data.meteoraPosition.usdProfitLossValue! /
+                            data.meteoraPosition.usdDepositsValue!
+                          : null;
+                      const quoteProfitPercent =
+                        -data.meteoraPosition.profitLossValue /
+                        data.meteoraPosition.depositsValue;
                       const openDateObj = new Date(
                         data.meteoraPosition.openTimestampMs,
                       );
+                      const closeDateObj = new Date(
+                        data.meteoraPosition.openTimestampMs,
+                      );
                       const openDate = openDateObj.toISOString();
-                      const validProfitPercent = profitPercent > 0.05;
-                      const validDate = openDateObj > START_DATE;
-                      const validSubmission = validProfitPercent && validDate;
+                      const closeDate = closeDateObj.toISOString();
+                      const validProfitPercent =
+                        usdProfitPercent !== null && usdProfitPercent < 10
+                          ? usdProfitPercent > MIN_PROFIT_PERCENT / 100
+                          : quoteProfitPercent > MIN_PROFIT_PERCENT;
+                      const validDate =
+                        openDateObj > START_DATE && openDateObj < END_DATE;
+                      const validTimeOpen =
+                        END_DATE.getTime() - START_DATE.getTime() >
+                        MIN_HOURS_OPEN * 1000 * 60 * 60;
+                      const validUsdAmount =
+                        data.meteoraPosition.usdDepositsValue !== null &&
+                        data.meteoraPosition.usdDepositsValue >
+                          MIN_USD_DEPOSIT_VALUE;
+                      const hasApiError = updatedPosition.hasApiError;
+                      const validSubmission =
+                        validProfitPercent &&
+                        validUsdAmount &&
+                        validDate &&
+                        validTimeOpen &&
+                        !hasApiError;
                       return {
-                        ...obj,
-                        profitPercent,
+                        ...data.fullSubmission,
+                        usdDepositAmount: data.meteoraPosition.usdDepositsValue
+                          ? -data.meteoraPosition.usdDepositsValue
+                          : null,
+                        usdProfitPercent,
+                        quoteProfitPercent,
                         openDate,
+                        closeDate,
                         validProfitPercent,
                         validDate,
+                        validTimeOpen,
+                        validUsdAmount,
                         validSubmission,
                         ...data.meteoraPosition,
                       };
                     }
                     return {
-                      ...obj,
-                      profitPercent: null,
+                      ...data.fullSubmission,
+                      usdDepositAmount: null,
+                      usdProfitPercent: null,
+                      quoteProfitPercent: null,
                       openDate: null,
+                      closeDate: null,
                       validProfitPercent: null,
                       validDate: null,
+                      validTimeOpen: null,
+                      validUsdAmount: null,
                       validSubmission: null,
                       position: null,
                       lbPair: null,

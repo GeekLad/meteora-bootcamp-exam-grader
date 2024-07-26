@@ -7,7 +7,13 @@ It is heavily based on his [Meteora DLMM Profit Analysis Tool](https://github.co
 
 - `RPC_URL`: URL of the RPC to use for parsing transactions
 - `DATA_FILE`: The filename of the CSV that contains the submissions
-- `SIGNATURE_COLUMN_NUMBER`: The column in the file that contains the transaction signature submitted
+- `SIGNATURE_COLUMN_LABEL`: The label for the column in the file that contains
+  the transaction signature submitted
+- `MIN_USD_DEPOSIT_VALUE`: The minimum USD deposit value
+- `MIN_HOURS_OPEN`: The minimum # of hours the position needs to be open
+- `MIN_PROFIT_PERCENT`: The minimium profit percent
+- `START_DATE`: The start date for the exam
+- `END_DATE` : The end date for the exam
 
 ## To Launch
 
