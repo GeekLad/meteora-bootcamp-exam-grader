@@ -190,13 +190,13 @@ output
                           ? usdProfitPercent > MIN_PROFIT_PERCENT / 100
                           : quoteProfitPercent > MIN_PROFIT_PERCENT;
                       const validDate =
-                        openDateObj > START_DATE && openDateObj < END_DATE;
+                        openDateObj >= START_DATE && openDateObj <= END_DATE;
                       const validTimeOpen =
                         END_DATE.getTime() - START_DATE.getTime() >
                         MIN_HOURS_OPEN * 1000 * 60 * 60;
                       const validUsdAmount =
                         data.meteoraPosition.usdDepositsValue !== null &&
-                        data.meteoraPosition.usdDepositsValue >
+                        -data.meteoraPosition.usdDepositsValue >
                           MIN_USD_DEPOSIT_VALUE;
                       const hasApiError = updatedPosition.hasApiError;
                       const validSubmission =
