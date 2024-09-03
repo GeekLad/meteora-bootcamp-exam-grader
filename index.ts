@@ -110,7 +110,16 @@ originalData.forEach((original, index) => {
 const submittedSignatures = output
   .filter((outputData) => outputData.cleansedSignature != null)
   .map((outputData) => outputData.cleansedSignature) as string[];
-const connection = new Connection(RPC_URL);
+const connection = new Connection(
+  RPC_URL,
+  process.env.ORIGIN_URL
+    ? {
+        httpHeaders: {
+          Origin: process.env.ORIGIN_URL,
+        },
+      }
+    : undefined,
+);
 
 // Get parsed transactions so we can get the position addresses
 const parsedTransactions = (await getParsedTransactions(
