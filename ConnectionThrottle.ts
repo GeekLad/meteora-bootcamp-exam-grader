@@ -50,10 +50,6 @@ export const getConfirmedSignaturesForAddress2 = CONNECTION_THROTTLE(
     options?: ConfirmedSignaturesForAddress2Options,
     commitment?: Finality,
   ): Promise<Array<ConfirmedSignatureInfo>> => {
-    return connection.getConfirmedSignaturesForAddress2(
-      address,
-      options,
-      commitment,
-    );
+    return connection.getSignaturesForAddress(address, options, commitment);
   },
 );

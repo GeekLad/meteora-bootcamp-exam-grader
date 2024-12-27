@@ -13,6 +13,7 @@ import { getParsedTransactions } from "./ConnectionThrottle";
 const errors: string[] = [];
 const requiredEnvVariables = [
   "SIGNATURE_COLUMN_LABEL",
+  "WALLET_COLUMN_LABEL",
   "RPC_URL",
   "DATA_FILE",
   "START_DATE",
@@ -36,6 +37,7 @@ if (errors.length > 0) {
 }
 
 const SIGNATURE_COLUMN_LABEL = process.env.SIGNATURE_COLUMN_LABEL!;
+const WALLET_COLUMN_LABEL = process.env.WALLET_COLUMN_LABEL!;
 const RPC_URL = process.env.RPC_URL!;
 const DATA_FILE = process.env.DATA_FILE!;
 const MIN_USD_DEPOSIT_VALUE = Number(process.env.MIN_USD_DEPOSIT_VALUE!);
@@ -49,7 +51,9 @@ const END_DATE = new Date(process.env.END_DATE!);
 interface LpArmyStudentData {
   fullSubmission: { [key: string]: string };
   originalSignature: string;
+  originalWallet: string;
   cleansedSignature?: string;
+  cleansedWallet?: string;
   position?: string;
   meteoraPosition?: MeteoraPosition;
 }
@@ -85,25 +89,46 @@ function isValidSignature(signature: string) {
   }
 }
 
+function isValidWallet(walletAddress: string) {
+  if (walletAddress.length < 43 || walletAddress.length > 44) {
+    return false;
+  }
+  try {
+    bs58.decode(walletAddress);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
 // Get the cleansed transaction IDs and start building the output
-originalData.forEach((original, index) => {
-  const cleansedTxId = original?.replace("https://solscan.io/tx/", "");
-  if (!cleansedTxId) {
+originalData.forEach((originalSignature, index) => {
+  const cleansedSignature = originalSignature?.replace(
+    /https:\/\/([^\/]+\/)+/,
+    "",
+  );
+  const originalWallet = fullOriginalData[index][WALLET_COLUMN_LABEL];
+  const cleansedWallet = originalWallet?.replace(/https:\/\/([^\/]+\/)+/, "");
+  if (!cleansedSignature) {
     return output.push({
       fullSubmission: fullOriginalData[index],
-      originalSignature: original,
+      originalSignature,
+      originalWallet,
     });
   }
-  if (isValidSignature(cleansedTxId)) {
+  if (isValidSignature(cleansedSignature) && isValidWallet(cleansedWallet)) {
     return output.push({
       fullSubmission: fullOriginalData[index],
-      originalSignature: original,
-      cleansedSignature: cleansedTxId,
+      originalSignature,
+      originalWallet,
+      cleansedSignature,
+      cleansedWallet,
     });
   }
   return output.push({
     fullSubmission: fullOriginalData[index],
-    originalSignature: original,
+    originalSignature: originalSignature,
+    originalWallet: originalWallet,
   });
 });
 
@@ -208,11 +233,14 @@ output
                         -data.meteoraPosition.usdDepositsValue >
                           MIN_USD_DEPOSIT_VALUE;
                       const hasApiError = updatedPosition.hasApiError;
+                      const validWallet =
+                        data.cleansedWallet == data.meteoraPosition.sender;
                       const validSubmission =
                         validProfitPercent &&
                         validUsdAmount &&
                         validDate &&
                         validTimeOpen &&
+                        validWallet &&
                         !hasApiError;
                       return {
                         ...data.fullSubmission,
@@ -227,6 +255,7 @@ output
                         validDate,
                         validTimeOpen,
                         validUsdAmount,
+                        validWallet,
                         validSubmission,
                         ...data.meteoraPosition,
                       };
@@ -242,6 +271,7 @@ output
                       validDate: null,
                       validTimeOpen: null,
                       validUsdAmount: null,
+                      validWallet: null,
                       validSubmission: null,
                       position: null,
                       lbPair: null,
