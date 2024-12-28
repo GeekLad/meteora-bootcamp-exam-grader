@@ -157,7 +157,7 @@ const connection = new Connection(
 );
 
 // Chunk into groups
-const chunkedSignatures = chunkArray(submittedSignatures, 1000);
+const chunkedSignatures = chunkArray(submittedSignatures, 250);
 
 // Array to store all the results
 const parsedTransactions: ParsedTransactionWithMeta[] = [];
