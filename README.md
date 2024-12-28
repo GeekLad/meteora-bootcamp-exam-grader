@@ -10,6 +10,7 @@ It is heavily based on his [Meteora DLMM Profit Analysis Tool](https://github.co
 - `DATA_FILE`: The filename of the CSV that contains the submissions
 - `SIGNATURE_COLUMN_LABEL`: The label for the column in the file that contains
   the transaction signature submitted
+- `WALLET_COLUMN_LABEL`: The label for the column with the wallet address
 - `MIN_USD_DEPOSIT_VALUE`: The minimum USD deposit value
 - `MIN_HOURS_OPEN`: The minimum # of hours the position needs to be open
 - `MIN_PROFIT_PERCENT`: The minimium profit percent

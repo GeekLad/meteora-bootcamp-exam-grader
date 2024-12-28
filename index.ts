@@ -6,7 +6,7 @@ import { getDlmmPairs } from "./MeteoraDlmmApi";
 import { getJupiterTokenList } from "./JupiterTokenList";
 import { MeteoraPositionStream } from "./MeteoraPositionStream";
 import { UsdMeteoraPositionStream } from "./UsdMeteoraPositionStream";
-import { objArrayToCsvString } from "./util";
+import { delay, objArrayToCsvString } from "./util";
 import type { MeteoraPosition } from "./MeteoraPosition";
 import { getParsedTransactions } from "./ConnectionThrottle";
 
@@ -47,6 +47,7 @@ const MIN_PROFIT_PERCENT = process.env.MIN_PROFIT_PERCENT
 const MIN_HOURS_OPEN = Number(process.env.MIN_HOURS_OPEN!);
 const START_DATE = new Date(process.env.START_DATE!);
 const END_DATE = new Date(process.env.END_DATE!);
+const THROTTLE_LIMIT = Number(process.env.THROTTLE_LIMIT || 10);
 
 interface LpArmyStudentData {
   fullSubmission: { [key: string]: string };
@@ -101,6 +102,15 @@ function isValidWallet(walletAddress: string) {
   }
 }
 
+function chunkArray<T>(array: T[], size: number): T[][] {
+  if (size <= 0) throw new Error("Size must be greater than 0");
+  const result: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    result.push(array.slice(i, i + size));
+  }
+  return result;
+}
+
 // Get the cleansed transaction IDs and start building the output
 originalData.forEach((originalSignature, index) => {
   const cleansedSignature = originalSignature?.replace(
@@ -146,15 +156,34 @@ const connection = new Connection(
     : undefined,
 );
 
-// Get parsed transactions so we can get the position addresses
-const parsedTransactions = (await getParsedTransactions(
-  connection,
-  submittedSignatures,
-  {
-    maxSupportedTransactionVersion: 0,
-    commitment: "confirmed",
-  },
-)) as ParsedTransactionWithMeta[];
+// Chunk into groups
+const chunkedSignatures = chunkArray(submittedSignatures, 1000);
+
+// Array to store all the results
+const parsedTransactions: ParsedTransactionWithMeta[] = [];
+
+// Process the chunks and store the results into parsedTransactions
+let processedCount = 0;
+for (let x = 0; x < chunkedSignatures.length; x++) {
+  let currentSignatures = chunkedSignatures[x];
+  // Get parsed transactions so we can get the position addresses
+  const currentTransactions = (await getParsedTransactions(
+    connection,
+    currentSignatures,
+    {
+      maxSupportedTransactionVersion: 0,
+      commitment: "confirmed",
+    },
+  )) as ParsedTransactionWithMeta[];
+
+  // Add the results
+  parsedTransactions.push(...currentTransactions);
+
+  processedCount += currentSignatures.length;
+  console.log(
+    `Read ${processedCount} of ${submittedSignatures.length} initial transactions.`,
+  );
+}
 
 console.log(
   `Read ${parsedTransactions.length} initial transactions, getting position addresses...`,
@@ -163,11 +192,28 @@ console.log(
 const { pairs } = await getDlmmPairs();
 const tokenList = await getJupiterTokenList();
 
+let positionsFound = 0;
+let concurrentProcessCount = 0;
 const meteoraTransactions = (
   await Promise.all(
-    parsedTransactions.map((transaction) =>
-      parseMeteoraTransactions(connection, pairs, tokenList, transaction),
-    ),
+    parsedTransactions.map(async (transaction) => {
+      while (concurrentProcessCount >= THROTTLE_LIMIT) {
+        await delay(100);
+      }
+      concurrentProcessCount++;
+      const result = await parseMeteoraTransactions(
+        connection,
+        pairs,
+        tokenList,
+        transaction,
+      );
+      concurrentProcessCount--;
+      positionsFound++;
+      console.log(
+        `Obtained ${positionsFound} out of ${parsedTransactions.length} position addresses`,
+      );
+      return result;
+    }),
   )
 ).flat();
 
@@ -185,9 +231,12 @@ console.log("Getting all P&Ls...");
 output
   .filter((outputData) => outputData.position)
   .forEach(async (outputData) => {
-    new MeteoraPositionStream(connection, outputData.position!).on(
-      "data",
-      (positionStreamData) => {
+    while (concurrentProcessCount >= THROTTLE_LIMIT) {
+      await delay(100);
+    }
+    concurrentProcessCount++;
+    new MeteoraPositionStream(connection, outputData.position!)
+      .on("data", (positionStreamData) => {
         if (positionStreamData.type == "positionsAndTransactions") {
           const { positions } = positionStreamData;
           new UsdMeteoraPositionStream(positions).on(
@@ -360,6 +409,8 @@ output
             },
           );
         }
-      },
-    );
+      })
+      .on("end", () => {
+        concurrentProcessCount--;
+      });
   });
