@@ -21,12 +21,27 @@ export async function getPrices(
   addresses: string[],
 ): Promise<Map<string, JupiterPrice>> {
   const queryString = addresses.join(",");
-  const response = await fetch(`${JUPITER_PRICE_API}${queryString}`);
-  const data = (await response.json()) as JupiterPriceApiResponse;
+  try {
+    const response = await fetch(`${JUPITER_PRICE_API}${queryString}`);
+    const data = (await response.json()) as JupiterPriceApiResponse;
 
-  const priceMap = new Map<string, JupiterPrice>();
+    const priceMap = new Map<string, JupiterPrice>();
 
-  Object.values(data.data).forEach((price) => priceMap.set(price.id, price));
+    Object.values(data.data).forEach((price) => priceMap.set(price.id, price));
 
-  return priceMap;
+    return priceMap;
+  } catch (err) {
+    return new Map<string, JupiterPrice>(
+      addresses.map((address) => [
+        address,
+        {
+          id: address,
+          mintSymbol: address,
+          vsToken: "",
+          vsTokenSymbol: "",
+          price: 0,
+        },
+      ]),
+    );
+  }
 }
