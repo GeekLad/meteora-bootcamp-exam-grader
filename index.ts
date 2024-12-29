@@ -235,6 +235,16 @@ output
       await delay(100);
     }
     concurrentProcessCount++;
+    const completedCount = output.filter(
+      (outputData) => outputData.meteoraPosition !== undefined,
+    ).length;
+    console.log(
+      `Updating row ${output.indexOf(outputData) + 2}, Wallet address: ${
+        outputData.originalWallet
+      }.  Obtained P&L for ${completedCount} of ${
+        meteoraTransactions.length
+      } positions.`,
+    );
     new MeteoraPositionStream(connection, outputData.position!)
       .on("data", (positionStreamData) => {
         if (positionStreamData.type == "positionsAndTransactions") {
@@ -245,9 +255,6 @@ output
               if (usdPositionStreamData.type == "updatedPosition") {
                 const updatedPosition = usdPositionStreamData.updatedPosition;
                 outputData.meteoraPosition = updatedPosition;
-                const completedCount = output.filter(
-                  (outputData) => outputData.meteoraPosition !== undefined,
-                ).length;
                 const csvString = objArrayToCsvString(
                   output.map((data) => {
                     if (data.meteoraPosition) {
@@ -264,7 +271,7 @@ output
                         data.meteoraPosition.openTimestampMs,
                       );
                       const closeDateObj = new Date(
-                        data.meteoraPosition.openTimestampMs,
+                        data.meteoraPosition.closeTimestampMs,
                       );
                       const openDate = openDateObj.toISOString();
                       const closeDate = closeDateObj.toISOString();
@@ -273,7 +280,7 @@ output
                           ? usdProfitPercent > MIN_PROFIT_PERCENT / 100
                           : quoteProfitPercent > MIN_PROFIT_PERCENT;
                       const validDate =
-                        openDateObj >= START_DATE && openDateObj <= END_DATE;
+                        openDateObj >= START_DATE && closeDateObj <= END_DATE;
                       const validTimeOpen =
                         END_DATE.getTime() - START_DATE.getTime() >
                         MIN_HOURS_OPEN * 1000 * 60 * 60;
@@ -284,12 +291,14 @@ output
                       const hasApiError = updatedPosition.hasApiError;
                       const validWallet =
                         data.cleansedWallet == data.meteoraPosition.sender;
+                      const isClosed = data.meteoraPosition.isClosed;
                       const validSubmission =
                         validProfitPercent &&
                         validUsdAmount &&
                         validDate &&
                         validTimeOpen &&
                         validWallet &&
+                        isClosed &&
                         !hasApiError;
                       return {
                         ...data.fullSubmission,
@@ -402,9 +411,6 @@ output
                   }),
                 );
                 Bun.write("./out.csv", csvString);
-                console.log(
-                  `Obtained P&L for ${completedCount} of ${meteoraTransactions.length} positions`,
-                );
               }
             },
           );
